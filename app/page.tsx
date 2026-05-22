@@ -3,133 +3,224 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
-export default function AdminPage() {
-  const [feedback, setFeedback] = useState<any[]>([]);
+export default function FeedbackPage() {
+  const [days, setDays] = useState<any[]>([]);
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [faculty, setFaculty] = useState<any[]>([]);
+  const [message, setMessage] = useState("");
+
+  const [form, setForm] = useState({
+    student_name: "",
+    school_name: "",
+    class_name: "",
+    email: "",
+    mobile: "",
+    day_id: "",
+    session_id: "",
+    faculty_id: "",
+    content_quality: "5",
+    explanation: "5",
+    interaction: "5",
+    activity_quality: "5",
+    usefulness: "5",
+    organization: "5",
+    liked_most: "",
+    suggestion: "",
+  });
 
   useEffect(() => {
-    async function loadData() {
-      const { data } = await supabase
-        .from("feedback")
-        .select(`
-          *,
-          days(day_title),
-          sessions(session_title),
-          faculty(faculty_name)
-        `)
-        .order("created_at", { ascending: false });
-
-      setFeedback(data || []);
+    async function loadDays() {
+      const { data } = await supabase.from("days").select("*").order("id");
+      setDays(data || []);
     }
-
-    loadData();
+    loadDays();
   }, []);
 
-  const total = feedback.length;
+  async function loadSessions(dayId: string) {
+    setForm({ ...form, day_id: dayId, session_id: "", faculty_id: "" });
 
-  const avg = (field: string) =>
-    total
-      ? (
-          feedback.reduce((sum, item) => sum + Number(item[field] || 0), 0) /
-          total
-        ).toFixed(2)
-      : "0";
+    const { data } = await supabase
+      .from("sessions")
+      .select("*")
+      .eq("day_id", dayId)
+      .order("id");
 
-  const facultySummary = feedback.reduce((acc: any, item) => {
-    const name = item.faculty?.faculty_name || "Unknown";
-    if (!acc[name]) acc[name] = { count: 0, total: 0 };
-    acc[name].count++;
-    acc[name].total +=
-      Number(item.content_quality) +
-      Number(item.explanation) +
-      Number(item.interaction) +
-      Number(item.activity_quality) +
-      Number(item.usefulness) +
-      Number(item.organization);
-    return acc;
-  }, {});
+    setSessions(data || []);
+    setFaculty([]);
+  }
+
+  async function loadFaculty(sessionId: string) {
+    setForm({ ...form, session_id: sessionId, faculty_id: "" });
+
+    const { data } = await supabase
+      .from("session_faculty")
+      .select(`
+        faculty_id,
+        role,
+        faculty (
+          faculty_name,
+          designation,
+          department
+        )
+      `)
+      .eq("session_id", sessionId);
+
+    setFaculty(data || []);
+  }
+
+  function handleChange(e: any) {
+    const { name, value } = e.target;
+
+    if (name === "day_id") {
+      loadSessions(value);
+      return;
+    }
+
+    if (name === "session_id") {
+      loadFaculty(value);
+      return;
+    }
+
+    setForm({ ...form, [name]: value });
+  }
+
+  async function handleSubmit(e: any) {
+    e.preventDefault();
+    setMessage("");
+
+    const payload = {
+      ...form,
+      day_id: Number(form.day_id),
+      session_id: Number(form.session_id),
+      faculty_id: Number(form.faculty_id),
+      content_quality: Number(form.content_quality),
+      explanation: Number(form.explanation),
+      interaction: Number(form.interaction),
+      activity_quality: Number(form.activity_quality),
+      usefulness: Number(form.usefulness),
+      organization: Number(form.organization),
+    };
+
+    const { error } = await supabase.from("feedback").insert([payload]);
+
+    if (error) {
+      setMessage("Unable to submit feedback. Please try again.");
+      return;
+    }
+
+    setMessage("Feedback submitted successfully. Thank you.");
+
+    setForm({
+      student_name: "",
+      school_name: "",
+      class_name: "",
+      email: "",
+      mobile: "",
+      day_id: "",
+      session_id: "",
+      faculty_id: "",
+      content_quality: "5",
+      explanation: "5",
+      interaction: "5",
+      activity_quality: "5",
+      usefulness: "5",
+      organization: "5",
+      liked_most: "",
+      suggestion: "",
+    });
+
+    setSessions([]);
+    setFaculty([]);
+  }
+
+  const ratingFields = [
+    ["content_quality", "Session content was useful"],
+    ["explanation", "Faculty explained the topic clearly"],
+    ["interaction", "Faculty encouraged interaction"],
+    ["activity_quality", "Activity / hands-on quality"],
+    ["usefulness", "Session improved my understanding"],
+    ["organization", "Overall session organization"],
+  ];
 
   return (
-    <main className="min-h-screen bg-slate-100 p-6">
-      <div className="max-w-7xl mx-auto">
-        <h1 className="text-3xl font-bold text-blue-700 mb-6">
-          Admin Feedback Dashboard
+    <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
+      <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow-xl p-8">
+        <h1 className="text-3xl font-bold text-blue-700">
+          AI Summer School Feedback Form
         </h1>
 
-        <div className="grid grid-cols-2 md:grid-cols-7 gap-4 mb-8">
-          <Card title="Responses" value={total} />
-          <Card title="Content" value={avg("content_quality")} />
-          <Card title="Explanation" value={avg("explanation")} />
-          <Card title="Interaction" value={avg("interaction")} />
-          <Card title="Activity" value={avg("activity_quality")} />
-          <Card title="Usefulness" value={avg("usefulness")} />
-          <Card title="Organization" value={avg("organization")} />
-        </div>
+        <p className="text-gray-600 mt-2 mb-6">
+          Please submit feedback for the session you attended.
+        </p>
 
-        <h2 className="text-xl font-semibold mb-3">Faculty-wise Average</h2>
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div className="grid md:grid-cols-2 gap-4">
+            <input required name="student_name" value={form.student_name} onChange={handleChange} placeholder="Student Name *" className="border p-3 rounded-xl" />
+            <input name="school_name" value={form.school_name} onChange={handleChange} placeholder="School Name" className="border p-3 rounded-xl" />
+            <input name="class_name" value={form.class_name} onChange={handleChange} placeholder="Class / Grade" className="border p-3 rounded-xl" />
+            <input name="mobile" value={form.mobile} onChange={handleChange} placeholder="Mobile Number" className="border p-3 rounded-xl" />
+            <input name="email" value={form.email} onChange={handleChange} placeholder="Email ID" className="border p-3 rounded-xl md:col-span-2" />
+          </div>
 
-        <div className="bg-white rounded-xl shadow overflow-x-auto mb-8">
-          <table className="w-full text-left">
-            <thead className="bg-blue-600 text-white">
-              <tr>
-                <th className="p-3">Faculty</th>
-                <th className="p-3">Responses</th>
-                <th className="p-3">Average / 5</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.keys(facultySummary).map((name) => (
-                <tr key={name} className="border-b">
-                  <td className="p-3">{name}</td>
-                  <td className="p-3">{facultySummary[name].count}</td>
-                  <td className="p-3">
-                    {(facultySummary[name].total / (facultySummary[name].count * 6)).toFixed(2)}
-                  </td>
-                </tr>
+          <div className="grid md:grid-cols-3 gap-4">
+            <select required name="day_id" value={form.day_id} onChange={handleChange} className="border p-3 rounded-xl">
+              <option value="">Select Day *</option>
+              {days.map((day) => (
+                <option key={day.id} value={day.id}>
+                  {day.day_title}
+                </option>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </select>
 
-        <h2 className="text-xl font-semibold mb-3">All Feedback</h2>
-
-        <div className="bg-white rounded-xl shadow overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-gray-900 text-white">
-              <tr>
-                <th className="p-3">Student</th>
-                <th className="p-3">School</th>
-                <th className="p-3">Day</th>
-                <th className="p-3">Session</th>
-                <th className="p-3">Faculty</th>
-                <th className="p-3">Liked Most</th>
-                <th className="p-3">Suggestion</th>
-              </tr>
-            </thead>
-            <tbody>
-              {feedback.map((f) => (
-                <tr key={f.id} className="border-b">
-                  <td className="p-3">{f.student_name}</td>
-                  <td className="p-3">{f.school_name}</td>
-                  <td className="p-3">{f.days?.day_title}</td>
-                  <td className="p-3">{f.sessions?.session_title}</td>
-                  <td className="p-3">{f.faculty?.faculty_name}</td>
-                  <td className="p-3">{f.liked_most}</td>
-                  <td className="p-3">{f.suggestion}</td>
-                </tr>
+            <select required name="session_id" value={form.session_id} onChange={handleChange} className="border p-3 rounded-xl">
+              <option value="">Select Session *</option>
+              {sessions.map((session) => (
+                <option key={session.id} value={session.id}>
+                  {session.session_title}
+                </option>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </select>
+
+            <select required name="faculty_id" value={form.faculty_id} onChange={handleChange} className="border p-3 rounded-xl">
+              <option value="">Select Faculty *</option>
+              {faculty.map((f: any, index: number) => (
+                <option key={index} value={f.faculty_id}>
+                  {f.faculty?.faculty_name} - {f.role}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-4">
+            {ratingFields.map(([name, label]) => (
+              <div key={name} className="bg-slate-50 p-4 rounded-xl border">
+                <label className="font-medium text-gray-700">{label}</label>
+                <select name={name} value={(form as any)[name]} onChange={handleChange} className="w-full mt-2 border p-3 rounded-xl bg-white">
+                  <option value="5">5 - Excellent</option>
+                  <option value="4">4 - Very Good</option>
+                  <option value="3">3 - Good</option>
+                  <option value="2">2 - Average</option>
+                  <option value="1">1 - Poor</option>
+                </select>
+              </div>
+            ))}
+          </div>
+
+          <textarea name="liked_most" value={form.liked_most} onChange={handleChange} placeholder="What did you like most about this session?" className="w-full border p-3 rounded-xl min-h-24" />
+
+          <textarea name="suggestion" value={form.suggestion} onChange={handleChange} placeholder="Any suggestion for improvement?" className="w-full border p-3 rounded-xl min-h-24" />
+
+          <button className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-semibold">
+            Submit Feedback
+          </button>
+        </form>
+
+        {message && (
+          <p className="mt-5 text-center font-semibold text-blue-700">
+            {message}
+          </p>
+        )}
       </div>
     </main>
-  );
-}
-
-function Card({ title, value }: { title: string; value: any }) {
-  return (
-    <div className="bg-white rounded-xl shadow p-4 text-center">
-      <p className="text-gray-500 text-sm">{title}</p>
-      <h2 className="text-2xl font-bold text-blue-700">{value}</h2>
-    </div>
   );
 }
